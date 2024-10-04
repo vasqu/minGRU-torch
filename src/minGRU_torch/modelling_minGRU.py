@@ -613,17 +613,14 @@ class MinGRUBlock(nn.Module):
 
         hidden_states = self.norm(x)
 
-        # similar to mamba we up project before the conv and gru ops
-        hidden_states, gate = self.to_hidden_and_gate(hidden_states).chunk(2, dim=-1)
-
         # necessary to avoid influence of padding
         if attention_mask is not None:
             hidden_states = hidden_states * attention_mask[:, :, None]
 
         # prefill conv states
         if cached_start:
-            rnn_states_transposed = hidden_states.transpose(1, 2)
-            cache.conv_states[self.layer_idx].copy_(F.pad(rnn_states_transposed, (self.conv_kernel_size - rnn_states_transposed.shape[-1], 0)))
+            hidden_states_transposed = hidden_states.transpose(1, 2)
+            cache.conv_states[self.layer_idx].copy_(F.pad(hidden_states_transposed, (self.conv_kernel_size - hidden_states_transposed.shape[-1], 0)))
 
         # reuse conv states or swipe through them
         if cached_forward:
@@ -639,6 +636,9 @@ class MinGRUBlock(nn.Module):
         # necessary to avoid influence of padding
         if attention_mask is not None:
             hidden_states = hidden_states * attention_mask[:, :, None]
+
+        # similar to mamba we up project before recurrent ops
+        hidden_states, gate = self.to_hidden_and_gate(hidden_states).chunk(2, dim=-1)
 
         # inference mode
         if cached_forward or seq_len == 1:
