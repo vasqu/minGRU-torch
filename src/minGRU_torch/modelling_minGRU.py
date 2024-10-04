@@ -109,11 +109,11 @@ class HybridMinGRUAttentionDynamicCache(DynamicCache):
         return self.key_cache[layer_idx].shape[size_idx]
 
     def to_legacy_cache(self) -> Tuple[Tuple[torch.Tensor], Tuple[torch.Tensor]]:
-        raise NotImplementedError("HybridMamba2AttentionDynamicCache does not have a legacy cache equivalent.")
+        raise NotImplementedError("HybridMinGRUAttentionDynamicCache does not have a legacy cache equivalent.")
 
     @classmethod
     def from_legacy_cache(cls, past_key_values: Optional[Tuple[Tuple[torch.FloatTensor]]] = None, num_hidden_layers: int = None) -> "DynamicCache":
-        raise NotImplementedError("HybridMamba2AttentionDynamicCache does not have a legacy cache equivalent.")
+        raise NotImplementedError("HybridMinGRUAttentionDynamicCache does not have a legacy cache equivalent.")
 
 
 class MinGRURMSNorm(nn.Module):
@@ -645,6 +645,8 @@ class MinGRUBlock(nn.Module):
         if cached_forward or seq_len == 1:
             hidden_states = self.g(hidden_states)
             gate = gate.sigmoid()
+
+            # TODO: check if we can cache this for the next iteration
             out = torch.lerp(cache.gru_states[self.layer_idx], hidden_states, gate) if cached_forward else (hidden_states * gate)
         # train mode (or on initial forward)
         else:
