@@ -47,7 +47,7 @@ class HybridMinGRUAttentionDynamicCache(DynamicCache):
         for i in range(config.num_hidden_layers):
             if i not in config.attention_layers_idx:
                 self.conv_states += [
-                    torch.zeros(batch_size, config.hidden_size * config.gru_expansion_factor, config.conv_kernel_size, device=device, dtype=dtype)
+                    torch.zeros(batch_size, config.hidden_size, config.conv_kernel_size, device=device, dtype=dtype)
                 ]
                 self.gru_states += [
                     torch.zeros(
@@ -586,14 +586,15 @@ class MinGRUBlock(nn.Module):
         self.use_conv_bias = config.use_conv_bias
         self.use_gru_bias = config.use_mingru_bias
 
-        self.norm = MinGRURMSNorm(self.intermediate_size, eps=config.rms_norm_epsilon)
+        self.norm = MinGRURMSNorm(self.hidden_size, eps=config.rms_norm_epsilon)
 
+        self.act = F.silu
         self.conv1d = nn.Conv1d(
-            in_channels=self.intermediate_size,
-            out_channels=self.intermediate_size,
+            in_channels=self.hidden_size,
+            out_channels=self.hidden_size,
             bias=self.use_conv_bias,
             kernel_size=self.kernel_size,
-            groups=self.intermediate_size,
+            groups=self.hidden_size,
             padding=self.kernel_size-1,
         )
 
@@ -621,7 +622,7 @@ class MinGRUBlock(nn.Module):
         # prefill conv states
         if cached_start:
             hidden_states_transposed = hidden_states.transpose(1, 2)
-            cache.conv_states[self.layer_idx].copy_(F.pad(hidden_states_transposed, (self.conv_kernel_size - hidden_states_transposed.shape[-1], 0)))
+            cache.conv_states[self.layer_idx].copy_(F.pad(hidden_states_transposed, (self.kernel_size - hidden_states_transposed.shape[-1], 0)))
 
         # reuse conv states or swipe through them
         if cached_forward:
@@ -650,18 +651,22 @@ class MinGRUBlock(nn.Module):
             out = torch.lerp(cache.gru_states[self.layer_idx], hidden_states, gate) if cached_forward else (hidden_states * gate)
         # train mode (or on initial forward)
         else:
+            # add empty initial states, increases instability in log ops but allows us flexible seq_lens and inference
+            gate = F.pad(gate, (0, 0, 1, 0))
+            hidden_states = F.pad(hidden_states, (0, 0, 1, 0))
+
             log_coefficients = -F.softplus(gate)
 
             log_z = -F.softplus(-gate)
             log_tilde_hidden_states = self.log_g(hidden_states)
             log_values = log_z + log_tilde_hidden_states
 
-            out = self.heinsen_associative_scan_log(log_coefficients, log_values)
+            out = self.heinsen_associative_scan_log(log_coefficients, log_values)[:, :seq_len]
 
             # TODO: check if this is correct
             # optionally save last hidden state
             if cached_start:
-                cache.gru_states[self.layer_idx].copy_(out[:, :-seq_len].unsqueeze(1))
+                cache.gru_states[self.layer_idx].copy_(out[:, -1, :].unsqueeze(1))
 
             # cut of until last hidden state
             out = out[:, -seq_len:]
@@ -676,8 +681,8 @@ class MinGRUBlock(nn.Module):
         return torch.where(hidden_states >= 0, (F.relu(hidden_states) + 0.5).log(), -F.softplus(-hidden_states))
 
     def heinsen_associative_scan_log(self, log_coefficients, log_values):
-        a_star = log_coefficients.cumsum(dim = 1)
-        log_h0_plus_b_star = (log_values - a_star).logcumsumexp(dim = 1)
+        a_star = log_coefficients.cumsum(dim=1)
+        log_h0_plus_b_star = (log_values - a_star).logcumsumexp(dim=1)
         log_h = a_star + log_h0_plus_b_star
         return log_h.exp()
 
@@ -938,7 +943,7 @@ class MinGRUModel(MinGRUPreTrainedModel):
         past_seen_tokens = past_key_values.get_seq_length() if past_key_values is not None else 0
 
         if self._attn_implementation == "sdpa" and not output_attentions:
-            if HybridMinGRUAttentionDynamicCache._ignore_causal_mask_sdpa(
+            if AttentionMaskConverter._ignore_causal_mask_sdpa(
                     attention_mask,
                     inputs_embeds=input_tensor,
                     past_key_values_length=past_seen_tokens,
