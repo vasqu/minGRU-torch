@@ -617,6 +617,7 @@ class MinGRUBlock(nn.Module):
         if attention_mask is not None:
             hidden_states = hidden_states * attention_mask[:, :, None]
 
+        # TODO: add cuda conv option
         # prefill conv states
         if cached_start:
             hidden_states_transposed = hidden_states.transpose(1, 2)
@@ -655,6 +656,7 @@ class MinGRUBlock(nn.Module):
 
             out = self.heinsen_associative_scan_log(log_coefficients, log_values)
 
+            # TODO: check if this is correct
             # optionally save last hidden state
             if cached_start:
                 cache.gru_states[self.layer_idx].copy_(out[:, :-seq_len].unsqueeze(1))
@@ -918,6 +920,7 @@ class MinGRUModel(MinGRUPreTrainedModel):
         past_key_values: HybridMinGRUAttentionDynamicCache,
         output_attentions: bool,
     ):
+        # TODO: fix attention mask creation, we need 2d in GRU and 4d in llama
         if not self._uses_attention_layers:
             if cache_position[0] > 0 or (attention_mask is not None and torch.all(attention_mask == 1)):
                 return None
