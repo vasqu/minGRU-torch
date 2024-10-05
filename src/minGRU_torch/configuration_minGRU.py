@@ -9,7 +9,7 @@ class MinGRUConfig(PretrainedConfig):
     """
     This is the configuration class to store the configuration of a [`MinGRUModel`]. It is used to instantiate a MinGRU
     model according to the specified arguments, defining the model architecture. Instantiating a configuration with the
-    defaults will yield a hybrid configuration of MinGRU and Attention layers of roughly 130m parameters.
+    defaults will yield a hybrid configuration of MinGRU and Attention layers of roughly 140m parameters.
 
     Configuration objects inherit from [`PretrainedConfig`] and can be used to control the model outputs. Read the
     documentation from [`PretrainedConfig`] for more information.
@@ -35,9 +35,9 @@ class MinGRUConfig(PretrainedConfig):
             Expanding factor used to determine the intermediate size in the mlp layer.
         attention_head_dim (`int`, *optional*, defaults to 64):
             Multi-head attention's head dimension.
-        num_attention_heads (`int`, *optional*, defaults to 12):
+        num_attention_heads (`int`, *optional*, defaults to 18):
             The number of heads in multi-head attention.
-        num_key_value_heads (`int`, *optional*, defaults to 12):
+        num_key_value_heads (`int`, *optional*, defaults to 18):
             This is the number of key_value heads that should be used to implement Grouped Query Attention. If
             `attention_num_key_value_heads=attention_num_heads`, the model will use Multi Head Attention (MHA), if
             `attention_num_key_value_heads=1` the model will use Multi Query Attention (MQA) otherwise GQA is used. When
@@ -52,7 +52,7 @@ class MinGRUConfig(PretrainedConfig):
             Whether or not to use bias in the qkv projection of the attention block.
         use_mlp_bias (`bool`, *optional*, defaults to `False`):
             Whether or not to use bias in the feed forward projections.
-        attention_layers_idx (`List[int]`, *optional*, defaults to `[]`):
+        attention_layers_idx (`List[int]`, *optional*, defaults to `[4, 9]`):
             The specific layers that exchange the minGRU block with the attention equivalent.
         num_hidden_layers (`int`, *optional*, defaults to 12):
             Number of hidden layers in the model.
@@ -120,8 +120,8 @@ class MinGRUConfig(PretrainedConfig):
         conv_kernel_size=4,
         mlp_expansion_factor=4,
         attention_head_dim=64,
-        num_attention_heads=12,
-        num_key_value_heads=12,
+        num_attention_heads=18,
+        num_key_value_heads=18,
         use_mingru_bias=False,
         use_conv_bias=True,
         use_attention_bias=False,
@@ -137,7 +137,7 @@ class MinGRUConfig(PretrainedConfig):
         use_cache=True,
         **kwargs,
     ):
-        attention_layers_idx = [] if attention_layers_idx is None else attention_layers_idx
+        attention_layers_idx = [4, 9] if attention_layers_idx is None else attention_layers_idx
 
         self.vocab_size = vocab_size
         self.pad_token_id = pad_token_id

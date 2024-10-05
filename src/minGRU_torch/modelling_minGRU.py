@@ -392,8 +392,8 @@ class MinGRUAttention(nn.Module):
         # Split combined hidden dims back into respective attention heads
         # [batch, seq_len, hidden_size] --> [batch, seq_len, num_heads, head_dim]
         query_states = query_states.reshape(bsz, q_len, self.num_heads, self.head_dim).transpose(1, 2)
-        key_states = key_states.reshape(bsz, q_len, self.num_heads_kv, self.head_dim).transpose(1, 2)
-        value_states = value_states.reshape(bsz, q_len, self.num_heads_kv, self.head_dim).transpose(1, 2)
+        key_states = key_states.reshape(bsz, q_len, self.num_key_value_heads, self.head_dim).transpose(1, 2)
+        value_states = value_states.reshape(bsz, q_len, self.num_key_value_heads, self.head_dim).transpose(1, 2)
 
         # Apply RoPE
         cos, sin = self.rotary_emb(value_states, position_ids)
@@ -541,8 +541,8 @@ class MinGRUSdpaAttention(MinGRUAttention):
             cache=cache
         )
 
-        key = repeat_kv(key, self.num_groups_kv)
-        value = repeat_kv(value, self.num_groups_kv)
+        key = repeat_kv(key, self.num_key_value_groups)
+        value = repeat_kv(value, self.num_key_value_groups)
 
         causal_mask = attention_mask
         if attention_mask is not None:
@@ -609,7 +609,7 @@ class MinGRUBlock(nn.Module):
         )
 
         self.to_hidden_and_gate = nn.Linear(self.hidden_size, self.intermediate_size, bias=self.use_gru_bias)
-        self.to_out = nn.Linear(self.intermediate_size, self.hidden_size, bias=False) if self.expansion_factor != 1. else nn.Identity()
+        self.to_out = nn.Linear(self.intermediate_size // 2, self.hidden_size, bias=False) if self.expansion_factor != 1. else nn.Identity()
 
     def forward(self, x, attention_mask, initial_state, cache):
         seq_len = x.shape[1]
@@ -737,9 +737,9 @@ class MinGRUMLP(nn.Module):
         self.act_fn = ACT2FN[config.hidden_act]
         self.use_bias = config.use_mlp_bias
 
-        self.norm = MinGRURMSNorm(self.intermediate_size, eps=config.rms_norm_epsilon)
+        self.norm = MinGRURMSNorm(self.hidden_size, eps=config.rms_norm_epsilon)
         self.up_proj = nn.Linear(self.hidden_size, self.intermediate_size, bias=self.use_bias)
-        self.down_proj = nn.Linear(self.hidden_size, self.intermediate_size, bias=self.use_bias)
+        self.down_proj = nn.Linear(self.intermediate_size, self.hidden_size, bias=self.use_bias)
 
     def forward(self, x):
         # pre-norm
