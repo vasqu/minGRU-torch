@@ -5,10 +5,11 @@ from typing import Optional, Tuple, Dict, Any, Union
 import torch
 from torch import nn
 from torch.functional import F
+from torch.nn import CrossEntropyLoss
 
 from .configuration_minGRU import MinGRUConfig
 from transformers.activations import ACT2FN
-from transformers.modeling_outputs import BaseModelOutputWithPast
+from transformers.modeling_outputs import BaseModelOutputWithPast, CausalLMOutputWithPast
 from transformers.utils.import_utils import is_causal_conv1d_available
 from transformers.modeling_attn_mask_utils import AttentionMaskConverter
 from transformers.modeling_flash_attention_utils import _flash_attention_forward
@@ -1042,3 +1043,143 @@ class MinGRUModel(MinGRUPreTrainedModel):
         if cache_position[0] > 0 or (attention_mask is not None and torch.all(attention_mask == 1)):
             minGRU_mask = None
         return minGRU_mask
+
+
+class MinGRUForCausalLM(MinGRUPreTrainedModel):
+    _tied_weights_keys = ["lm_head.weight"]
+
+    def __init__(self, config):
+        super().__init__(config)
+        self.backbone = MinGRUModel(config)
+        self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
+
+        # Initialize weights and apply final processing
+        self.post_init()
+
+    def get_output_embeddings(self):
+        return self.lm_head
+
+    def set_output_embeddings(self, new_embeddings):
+        self.lm_head = new_embeddings
+
+    def get_input_embeddings(self):
+        return self.backbone.get_input_embeddings()
+
+    def set_input_embeddings(self, new_embeddings):
+        return self.backbone.set_input_embeddings(new_embeddings)
+
+    def prepare_inputs_for_generation(
+        self,
+        input_ids,
+        past_key_values=None,
+        attention_mask=None,
+        inputs_embeds=None,
+        cache_position=None,
+        position_ids=None,
+        use_cache=True,
+        **kwargs,
+    ):
+        empty_past_kv = past_key_values is None
+
+        # If we have cache: let's slice `input_ids` through `cache_position`, to keep only the unprocessed tokens
+        # Exception 1: when passing input_embeds, input_ids may be missing entries
+        # Exception 2: some generation methods do special slicing of input_ids, so we don't need to do it here
+        if not empty_past_kv:
+            if inputs_embeds is not None:  # Exception 1
+                input_ids = input_ids[:, -cache_position.shape[0] :]
+            elif input_ids.shape[1] != cache_position.shape[0]:  # Default case (the "else", a no op, is Exception 2)
+                input_ids = input_ids[:, cache_position]
+
+        # Initialize cache, if necessary
+        if empty_past_kv:
+            past_key_values = HybridMinGRUAttentionDynamicCache(
+                config=self.config,
+                batch_size=input_ids.shape[0],
+                device=self.device,
+                dtype=self.dtype,
+            )
+
+        if attention_mask is not None and position_ids is None:
+            # create position_ids on the fly for batch generation
+            position_ids = attention_mask.long().cumsum(-1) - 1
+            position_ids.masked_fill_(attention_mask == 0, 1)
+            if not empty_past_kv:
+                position_ids = position_ids[:, -input_ids.shape[1] :]
+
+        # If `inputs_embeds` are passed, we only want to use them in the 1st generation step
+        if inputs_embeds is not None and empty_past_kv:
+            model_inputs = {"inputs_embeds": inputs_embeds}
+        else:
+            model_inputs = {"input_ids": input_ids.contiguous()}  # `contiguous()` needed for compilation use cases
+
+        model_inputs.update(
+            {
+                "position_ids": position_ids,
+                "past_key_values": past_key_values,
+                "use_cache": use_cache,
+                "attention_mask": attention_mask,
+                "cache_position": cache_position,
+            }
+        )
+        return model_inputs
+
+    def forward(
+            self,
+            input_ids: Optional[torch.LongTensor] = None,
+            attention_mask: Optional[torch.Tensor] = None,
+            inputs_embeds: Optional[torch.LongTensor] = None,
+            position_ids: Optional[torch.LongTensor] = None,
+            past_key_values: Optional[HybridMinGRUAttentionDynamicCache] = None,
+            labels: Optional[torch.LongTensor] = None,
+            use_cache: Optional[bool] = None,
+            output_attentions: Optional[bool] = None,
+            output_hidden_states: Optional[bool] = None,
+            return_dict: Optional[bool] = None,
+            cache_position: Optional[torch.LongTensor] = None,
+    ) -> Union[Tuple, CausalLMOutputWithPast]:
+        r"""
+        labels (`torch.LongTensor` of shape `(batch_size, sequence_length)`, *optional*):
+            Labels for language modeling. Note that the labels **are shifted** inside the model, i.e. you can set
+            `labels = input_ids` Indices are selected in `[-100, 0, ..., config.vocab_size]` All labels set to `-100`
+            are ignored (masked), the loss is only computed for labels in `[0, ..., config.vocab_size]`
+        """
+        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+
+        outputs = self.backbone(
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            inputs_embeds=inputs_embeds,
+            position_ids=position_ids,
+            past_key_values=past_key_values,
+            use_cache=use_cache,
+            output_attentions=output_attentions,
+            output_hidden_states=output_hidden_states,
+            return_dict=return_dict,
+            cache_position=cache_position,
+        )
+
+        hidden_states = outputs[0]
+        logits = self.lm_head(hidden_states.to(self.lm_head.weight.dtype)).float()
+
+        loss = None
+        if labels is not None:
+            # Move labels to correct device to enable model parallelism
+            labels = labels.to(logits.device)
+            # Shift so that tokens < n predict n
+            shift_logits = logits[..., :-1, :].contiguous()
+            shift_labels = labels[..., 1:].contiguous()
+            # Flatten the tokens
+            loss_fct = CrossEntropyLoss()
+            loss = loss_fct(shift_logits.view(-1, shift_logits.size(-1)), shift_labels.view(-1))
+
+        if not return_dict:
+            output = (logits,) + outputs[1:]
+            return ((loss,) + output) if loss is not None else output
+
+        return CausalLMOutputWithPast(
+            loss=loss,
+            logits=logits,
+            past_key_values=outputs.past_key_values,
+            hidden_states=outputs.hidden_states,
+            attentions=outputs.attentions,
+        )
