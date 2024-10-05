@@ -43,7 +43,7 @@ class HybridMinGRUAttentionDynamicCache(DynamicCache):
     For attention layers, `key_cache` and `value_cache` have a shape of `(batch_size, num_key_value_heads, seq_len, head_dim)`.
 
     For minGRU layers, `key_cache` and `value_cache` have a shape of `(batch_size, 0)` (empty tensors),
-    while `conv_states` represents the convolution state and has a shape of `(batch_size, hidden_size * gru_expansion_factor, conv_kernel_size)`,
+    while `conv_states` represents the convolution state and has a shape of `(batch_size, hidden_size, conv_kernel_size)`,
     and `gru_states` represents the gur state and has a shape of `(batch_size, 1, hidden_size * gru_expansion_factor)`.
     """
 
