@@ -585,6 +585,37 @@ MINGRU_ATTENTION_CLASSES = {
 }
 
 
+class MinGRUAttentionBlock(nn.Module):
+    def __init__(self, config: MinGRUConfig, layer_idx: int):
+        super().__init__()
+
+        self.layer_idx = layer_idx
+        self.hidden_size = config.hidden_size
+
+        self.norm = MinGRURMSNorm(self.hidden_size, eps=config.rms_norm_epsilon)
+        self.attn = MINGRU_ATTENTION_CLASSES[config._attn_implementation](config, layer_idx)
+
+    def forward(
+        self,
+        x: torch.FloatTensor,
+        attention_mask: Optional[torch.Tensor] = None,
+        position_ids: Optional[torch.LongTensor] = None,
+        cache: Optional[HybridMinGRUAttentionDynamicCache] = None,
+        output_attentions: bool = False,
+        use_cache: bool = False,
+    ):
+        hidden_states = self.norm(x)
+        hidden_states = self.attn(
+            hidden_states,
+            attention_mask,
+            position_ids,
+            cache,
+            output_attentions,
+            use_cache
+        )
+        return hidden_states[0] + x, hidden_states[1]
+
+
 class MinGRUBlock(nn.Module):
     def __init__(self, config: MinGRUConfig, layer_idx: int):
         super().__init__()
@@ -766,7 +797,7 @@ class MinGRUDecoderBlock(nn.Module):
         self.attention_layer = layer_idx in config.attention_layers_idx
 
         if self.attention_layer:
-            self.block = MINGRU_ATTENTION_CLASSES[config._attn_implementation](config, layer_idx)
+            self.block = MinGRUAttentionBlock(config, layer_idx)
         else:
             self.block = MinGRUBlock(config, layer_idx)
         self.feed_forward = MinGRUMLP(config, layer_idx)

@@ -3,7 +3,7 @@ from transformers import AutoTokenizer
 from src.minGRU_torch.modeling.modeling_minGRU import (
     MinGRUConfig,
     MinGRUModel, MinGRUForCausalLM,
-    MinGRUBlock, MinGRUAttention
+    MinGRUBlock, MinGRUAttentionBlock
 )
 
 config = MinGRUConfig()
@@ -12,7 +12,7 @@ print(model)
 print(model.num_parameters())
 
 gru_block = MinGRUBlock(config, 0)
-attn_block = MinGRUAttention(config, 0)
+attn_block = MinGRUAttentionBlock(config, 0)
 
 for name, block in zip(["gru", "attn"], [gru_block, attn_block]):
     block_params = 0
