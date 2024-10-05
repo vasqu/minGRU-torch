@@ -635,6 +635,7 @@ class MinGRUBlock(nn.Module):
         else:
             hidden_states = self.act(self.conv1d(hidden_states.transpose(1, 2))[..., :seq_len].transpose(1, 2))
 
+        # TODO: after linear proj + mask gate with min dtype
         # necessary to avoid influence of padding
         if attention_mask is not None:
             hidden_states = hidden_states * attention_mask[:, :, None]
@@ -651,8 +652,18 @@ class MinGRUBlock(nn.Module):
             out = torch.lerp(cache.gru_states[self.layer_idx], hidden_states, gate) if cached_forward else (hidden_states * gate)
         # train mode (or on initial forward)
         else:
-            # add empty initial states, increases instability in log ops but allows us flexible seq_lens and inference
-            gate = F.pad(gate, (0, 0, 1, 0))
+            # TODO: cleanup
+            log_coefficients = -F.softplus(gate)
+
+            log_z = -F.softplus(-gate)
+            log_tilde_hidden_states = self.log_g(hidden_states)
+            log_values = log_z + log_tilde_hidden_states
+
+            out2 = self.heinsen_associative_scan_log(log_coefficients, log_values)[:, :seq_len]
+
+            # add empty initial states by adding -inf == 0 log space
+            dtype = gate.dtype
+            gate = F.pad(gate, (0, 0, 1, 0), value=torch.finfo(dtype).min)
             hidden_states = F.pad(hidden_states, (0, 0, 1, 0))
 
             log_coefficients = -F.softplus(gate)
@@ -661,7 +672,10 @@ class MinGRUBlock(nn.Module):
             log_tilde_hidden_states = self.log_g(hidden_states)
             log_values = log_z + log_tilde_hidden_states
 
-            out = self.heinsen_associative_scan_log(log_coefficients, log_values)[:, :seq_len]
+            out_tmp = self.heinsen_associative_scan_log(log_coefficients, log_values)
+            out = out_tmp[:, -seq_len:]
+
+            res = torch.allclose(out2, out, atol=1e-5)
 
             # TODO: check if this is correct
             # optionally save last hidden state
