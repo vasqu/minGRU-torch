@@ -649,7 +649,6 @@ class MinGRUBlock(nn.Module):
             hidden_states = self.g(hidden_states)
             gate = gate.sigmoid()
 
-            # TODO: check if we can cache this for the next iteration
             out = torch.lerp(cache.gru_states[self.layer_idx], hidden_states, gate) if cached_forward else (hidden_states * gate)
         # train/parallel mode
         else:
@@ -663,16 +662,12 @@ class MinGRUBlock(nn.Module):
             log_tilde_hidden_states = self.log_g(hidden_states)
             log_values = log_z + log_tilde_hidden_states
 
-            out_tmp = self.heinsen_associative_scan_log(log_coefficients, log_values)
-            out = out_tmp[:, -seq_len:]
+            # cut of the initial padded hidden state
+            out = self.heinsen_associative_scan_log(log_coefficients, log_values)[:, -seq_len:]
 
-            # TODO: check if this is correct
             # optionally save last hidden state
             if cached_start:
                 cache.gru_states[self.layer_idx].copy_(out[:, -1, :].unsqueeze(1))
-
-            # cut of until last hidden state
-            out = out[:, -seq_len:]
 
         # residual connection
         return self.to_out(out) + x, None
