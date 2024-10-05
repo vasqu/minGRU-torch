@@ -601,7 +601,7 @@ class MinGRUBlock(nn.Module):
         self.to_hidden_and_gate = nn.Linear(self.hidden_size, self.intermediate_size, bias=self.use_gru_bias)
         self.to_out = nn.Linear(self.intermediate_size, self.hidden_size, bias=False) if self.expansion_factor != 1. else nn.Identity()
 
-    def forward(self, x, attention_mask, cache):
+    def forward(self, x, attention_mask, initial_state, cache):
         seq_len = x.shape[1]
         min_dtype = torch.finfo(x.dtype).min
 
@@ -636,13 +636,13 @@ class MinGRUBlock(nn.Module):
         else:
             hidden_states = self.act(self.conv1d(hidden_states.transpose(1, 2))[..., :seq_len].transpose(1, 2))
 
-        # TODO: after linear proj + mask gate with min dtype
+        # similar to mamba we up project before recurrent ops
+        hidden_states, gate = self.to_hidden_and_gate(hidden_states).chunk(2, dim=-1)
+
         # necessary to avoid influence of padding
         if attention_mask is not None:
             hidden_states = hidden_states * attention_mask[:, :, None]
-
-        # similar to mamba we up project before recurrent ops
-        hidden_states, gate = self.to_hidden_and_gate(hidden_states).chunk(2, dim=-1)
+            gate = gate + (~attention_mask[:, :, None].bool() * min_dtype)
 
         # inference/sequential mode
         if cached_forward or seq_len == 1:
@@ -652,9 +652,10 @@ class MinGRUBlock(nn.Module):
             out = torch.lerp(cache.gru_states[self.layer_idx], hidden_states, gate) if cached_forward else (hidden_states * gate)
         # train/parallel mode
         else:
-            # add empty initial states by adding -inf == 0 log space
-            gate = F.pad(gate, (0, 0, 1, 0), value=min_dtype)
-            hidden_states = F.pad(hidden_states, (0, 0, 1, 0))
+            # either add empty initial states by adding -inf == 0 log space
+            if not initial_state:
+                gate = F.pad(gate, (0, 0, 1, 0), value=min_dtype)
+                hidden_states = F.pad(hidden_states, (0, 0, 1, 0))
 
             log_coefficients = -F.softplus(gate)
 
@@ -662,7 +663,12 @@ class MinGRUBlock(nn.Module):
             log_tilde_hidden_states = self.log_g(hidden_states)
             log_values = log_z + log_tilde_hidden_states
 
-            # cut of the initial padded hidden state
+            # or add initial hidden state - inference compatibility probably not given out-of-the-box
+            if initial_state:
+                log_coefficients = F.pad(log_coefficients, (0, 0, 1, 0))
+                log_values = torch.cat((self.log_g(initial_state), log_values), dim=1)
+
+            # cut of the initial (padded) hidden state
             out = self.heinsen_associative_scan_log(log_coefficients, log_values)[:, -seq_len:]
 
             # optionally save last hidden state
@@ -752,6 +758,7 @@ class MinGRUDecoderBlock(nn.Module):
             hidden_states, attn_weights = self.block(
                 hidden_states,
                 attention_mask,
+                None,  # TODO: add proper initial state support
                 cache
             )
         return self.feed_forward(hidden_states), attn_weights

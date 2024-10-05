@@ -34,4 +34,4 @@ out_tmp = heinsen_associative_scan_log(log_coefficients, log_values)
 out = out_tmp[:, -seq_len:]
 
 # check if we produced the same :)
-assert torch.allclose(out2, out, atol=1e-5)
+assert torch.allclose(out2, out)
