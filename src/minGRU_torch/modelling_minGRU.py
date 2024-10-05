@@ -603,6 +603,7 @@ class MinGRUBlock(nn.Module):
 
     def forward(self, x, attention_mask, cache):
         seq_len = x.shape[1]
+        min_dtype = torch.finfo(x.dtype).min
 
         # Managing cache state
         if cache is not None:
@@ -643,27 +644,17 @@ class MinGRUBlock(nn.Module):
         # similar to mamba we up project before recurrent ops
         hidden_states, gate = self.to_hidden_and_gate(hidden_states).chunk(2, dim=-1)
 
-        # inference mode
+        # inference/sequential mode
         if cached_forward or seq_len == 1:
             hidden_states = self.g(hidden_states)
             gate = gate.sigmoid()
 
             # TODO: check if we can cache this for the next iteration
             out = torch.lerp(cache.gru_states[self.layer_idx], hidden_states, gate) if cached_forward else (hidden_states * gate)
-        # train mode (or on initial forward)
+        # train/parallel mode
         else:
-            # TODO: cleanup
-            log_coefficients = -F.softplus(gate)
-
-            log_z = -F.softplus(-gate)
-            log_tilde_hidden_states = self.log_g(hidden_states)
-            log_values = log_z + log_tilde_hidden_states
-
-            out2 = self.heinsen_associative_scan_log(log_coefficients, log_values)[:, :seq_len]
-
             # add empty initial states by adding -inf == 0 log space
-            dtype = gate.dtype
-            gate = F.pad(gate, (0, 0, 1, 0), value=torch.finfo(dtype).min)
+            gate = F.pad(gate, (0, 0, 1, 0), value=min_dtype)
             hidden_states = F.pad(hidden_states, (0, 0, 1, 0))
 
             log_coefficients = -F.softplus(gate)
@@ -674,8 +665,6 @@ class MinGRUBlock(nn.Module):
 
             out_tmp = self.heinsen_associative_scan_log(log_coefficients, log_values)
             out = out_tmp[:, -seq_len:]
-
-            res = torch.allclose(out2, out, atol=1e-5)
 
             # TODO: check if this is correct
             # optionally save last hidden state
