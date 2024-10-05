@@ -1,6 +1,6 @@
 from transformers import AutoTokenizer
 
-from src.minGRU_torch.modelling_minGRU import (
+from src.minGRU_torch.modeling.modeling_minGRU import (
     MinGRUConfig,
     MinGRUModel, MinGRUForCausalLM,
     MinGRUBlock, MinGRUAttention

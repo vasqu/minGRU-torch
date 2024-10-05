@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools >= 61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+version="0.0.1"
+name = "mingru_torch"
+authors = [
+    { name="Anton Vlasjuk" },
+]
+description = "A huggingface compatible variant of toy hybrid MinGRU x Attention models."
+readme = "README.md"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: MIT License",
+    "Operating System :: Unix",
+]
+requires-python = ">=3.8"
+dynamic = ["dependencies", "optional-dependencies"]
+
+[tool.setuptools.dynamic]
+dependencies = {file = ["requirements.txt"]}
+optional-dependencies = {dev = { file = ["requirements-cuda-conv.txt"] }}
