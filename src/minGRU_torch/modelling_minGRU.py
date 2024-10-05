@@ -790,7 +790,8 @@ class MinGRUDecoderBlock(nn.Module):
             hidden_states, attn_weights = self.block(
                 hidden_states,
                 attention_mask,
-                None,  # TODO: add proper initial state support
+                # TODO: add proper initial state support
+                None,
                 cache
             )
         return self.feed_forward(hidden_states), attn_weights
@@ -900,11 +901,14 @@ class MinGRUModel(MinGRUPreTrainedModel):
         causal_mask = self._update_causal_mask(
             attention_mask, inputs_embeds, cache_position, past_key_values, output_attentions
         )
+        minGRU_mask = self._update_min_gru_mask(attention_mask, cache_position)
 
         all_hidden_states = () if output_hidden_states else None
         all_self_attns = () if output_attentions else None
 
-        for decoder_block in self.layers:
+        for idx, decoder_block in enumerate(self.layers):
+            current_mask = causal_mask if idx in self.config.attention_layers_idx else minGRU_mask
+
             if output_hidden_states:
                 all_hidden_states += (hidden_states,)
 
@@ -912,7 +916,7 @@ class MinGRUModel(MinGRUPreTrainedModel):
                 out = self._gradient_checkpointing_func(
                     decoder_block.__call__,
                     hidden_states,
-                    causal_mask,
+                    current_mask,
                     position_ids,
                     past_key_values,
                     output_attentions,
@@ -921,7 +925,7 @@ class MinGRUModel(MinGRUPreTrainedModel):
             else:
                 out = decoder_block(
                     hidden_states=hidden_states,
-                    attention_mask=causal_mask,
+                    attention_mask=current_mask,
                     position_ids=position_ids,
                     cache=past_key_values,
                     output_attentions=output_attentions,
@@ -964,11 +968,8 @@ class MinGRUModel(MinGRUPreTrainedModel):
         past_key_values: HybridMinGRUAttentionDynamicCache,
         output_attentions: bool,
     ):
-        # TODO: fix attention mask creation, we need 2d in GRU and 4d in llama
         if not self._uses_attention_layers:
-            if cache_position[0] > 0 or (attention_mask is not None and torch.all(attention_mask == 1)):
-                return None
-            return attention_mask
+            return None
 
         if self._attn_implementation == "flash_attention_2":
             if attention_mask is not None and 0.0 in attention_mask:
@@ -1030,3 +1031,14 @@ class MinGRUModel(MinGRUPreTrainedModel):
             causal_mask = AttentionMaskConverter._unmask_unattended(causal_mask, min_dtype)
 
         return causal_mask
+
+    def _update_min_gru_mask(self, attention_mask, cache_position):
+        """
+        No need for zeroing states when
+            1. Cached forward
+            2. Attending to all inputs
+        """
+        minGRU_mask = attention_mask
+        if cache_position[0] > 0 or (attention_mask is not None and torch.all(attention_mask == 1)):
+            minGRU_mask = None
+        return minGRU_mask
