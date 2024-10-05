@@ -5,12 +5,13 @@ from typing import Optional, Tuple, Dict, Any, Union
 import torch
 from torch import nn
 from torch.functional import F
-from transformers.modeling_attn_mask_utils import AttentionMaskConverter
 
 from .configuration_minGRU import MinGRUConfig
 from transformers.activations import ACT2FN
-from transformers.modeling_flash_attention_utils import _flash_attention_forward
 from transformers.modeling_outputs import BaseModelOutputWithPast
+from transformers.utils.import_utils import is_causal_conv1d_available
+from transformers.modeling_attn_mask_utils import AttentionMaskConverter
+from transformers.modeling_flash_attention_utils import _flash_attention_forward
 from transformers import (
     ROPE_INIT_FUNCTIONS,
     logging,
@@ -20,6 +21,14 @@ from transformers import (
 from transformers.utils import get_torch_version, is_flash_attn_greater_or_equal_2_10
 
 logger = logging.get_logger(__name__)
+
+is_fast_path_available = False
+if is_causal_conv1d_available():
+    from causal_conv1d import causal_conv1d_fn, causal_conv1d_update
+
+    is_fast_path_available = True
+else:
+    causal_conv1d_fn, causal_conv1d_update = None, None
 
 
 class HybridMinGRUAttentionDynamicCache(DynamicCache):
@@ -619,22 +628,7 @@ class MinGRUBlock(nn.Module):
         if attention_mask is not None:
             hidden_states = hidden_states * attention_mask[:, :, None]
 
-        # TODO: add cuda conv option
-        # prefill conv states
-        if cached_start:
-            hidden_states_transposed = hidden_states.transpose(1, 2)
-            cache.conv_states[self.layer_idx].copy_(F.pad(hidden_states_transposed, (self.kernel_size - hidden_states_transposed.shape[-1], 0)))
-
-        # reuse conv states or swipe through them
-        if cached_forward:
-            cache.conv_states[self.layer_idx].copy_(torch.roll(cache.conv_states[self.layer_idx], shifts=-1, dims=-1))
-            cache.conv_states[self.layer_idx][:, :, -1] = hidden_states.squeeze(1)
-            hidden_states = torch.sum(cache.conv_states[self.layer_idx] * self.conv1d.weight.squeeze(1), dim=-1)
-            if self.conv1d.bias is not None:
-                hidden_states = hidden_states + self.conv1d.bias
-            hidden_states = self.act(hidden_states)
-        else:
-            hidden_states = self.act(self.conv1d(hidden_states.transpose(1, 2))[..., :seq_len].transpose(1, 2))
+        hidden_states = self.causal_conv1d(hidden_states, cache, cached_start, cached_forward)
 
         # similar to mamba we up project before recurrent ops
         hidden_states, gate = self.to_hidden_and_gate(hidden_states).chunk(2, dim=-1)
@@ -677,6 +671,44 @@ class MinGRUBlock(nn.Module):
 
         # residual connection
         return self.to_out(out) + x, None
+
+    def causal_conv1d(self, hidden_states, cache, cached_start, cached_forward):
+        seq_len = hidden_states.shape[1]
+
+        # prefill conv states
+        if cached_start:
+            hidden_states_transposed = hidden_states.transpose(1, 2)
+            cache.conv_states[self.layer_idx].copy_(F.pad(hidden_states_transposed, (self.kernel_size - hidden_states_transposed.shape[-1], 0)))
+
+        # reuse conv states or swipe through them
+        if not is_fast_path_available:
+            if cached_forward:
+                cache.conv_states[self.layer_idx].copy_(torch.roll(cache.conv_states[self.layer_idx], shifts=-1, dims=-1))
+                cache.conv_states[self.layer_idx][:, :, -1] = hidden_states.squeeze(1)
+                hidden_states = torch.sum(cache.conv_states[self.layer_idx] * self.conv1d.weight.squeeze(1), dim=-1)
+                if self.conv1d.bias is not None:
+                    hidden_states = hidden_states + self.conv1d.bias
+                hidden_states = self.act(hidden_states)
+            else:
+                hidden_states = self.act(self.conv1d(hidden_states.transpose(1, 2))[..., :seq_len].transpose(1, 2))
+        else:
+            if cached_forward:
+                hidden_states = causal_conv1d_update(
+                    hidden_states.squeeze(1),
+                    cache.conv_states[self.layer_idx],
+                    self.conv1d.weight.squeeze(1),
+                    self.conv1d.bias,
+                    self.act,
+                )
+            else:
+                hidden_states = causal_conv1d_fn(
+                    hidden_states.transpose(1, 2),
+                    self.conv1d.weight.squeeze(1),
+                    bias=self.conv1d.bias,
+                    activation=self.act,
+                ).transpose(1, 2)
+
+        return hidden_states
 
     def g(self, hidden_states):
         return torch.where(hidden_states >= 0, hidden_states + 0.5, hidden_states.sigmoid())
