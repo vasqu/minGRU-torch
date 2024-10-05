@@ -17,7 +17,7 @@ from transformers import (
     ROPE_INIT_FUNCTIONS,
     logging,
     DynamicCache,
-    PreTrainedModel,
+    PreTrainedModel, GenerationMixin,
 )
 from transformers.utils import get_torch_version, is_flash_attn_greater_or_equal_2_10
 
@@ -1045,7 +1045,7 @@ class MinGRUModel(MinGRUPreTrainedModel):
         return minGRU_mask
 
 
-class MinGRUForCausalLM(MinGRUPreTrainedModel):
+class MinGRUForCausalLM(MinGRUPreTrainedModel, GenerationMixin):
     _tied_weights_keys = ["lm_head.weight"]
 
     def __init__(self, config):

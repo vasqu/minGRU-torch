@@ -1,10 +1,14 @@
 import torch
 
-from src.minGRU_torch.modelling_minGRU import MinGRUConfig, MinGRUModel, MinGRUBlock, MinGRUAttention
+from src.minGRU_torch.modelling_minGRU import (
+    MinGRUConfig,
+    MinGRUModel, MinGRUForCausalLM,
+    MinGRUBlock, MinGRUAttention
+)
 
 config = MinGRUConfig()
 config.attention_layers_idx = [2, 3]
-model = MinGRUModel(config)
+model = MinGRUForCausalLM(config)
 print(model)
 print(model.num_parameters())
 
@@ -24,4 +28,4 @@ out = model(
     attention_mask=torch.tensor([[1,1,1], [1,1,0]], dtype=torch.long),
     use_cache=True
 )
-print(out.last_hidden_state.shape)
+print(out.logits.shape)
