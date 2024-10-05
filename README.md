@@ -22,8 +22,8 @@ git clone https://github.com/vasqu/minGRU-torch.git
 cd minGRU-torch
 pip install .
 ```
-I've semi-implemented the cuda variant for the causal convolution. Thus, you could install
-[causal-conv1d](https://github.com/Dao-AILab/causal-conv1d) package separately (for safety with version 1.2.0).
+I've semi-implemented the path for the cuda causal convolution. Thus, you could install the
+[causal-conv1d](https://github.com/Dao-AILab/causal-conv1d) package separately (for safety with version 1.2.0) which will then be utilized automatically.
 
 
 ## Usage
