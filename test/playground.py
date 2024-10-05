@@ -1,4 +1,4 @@
-import torch
+from transformers import AutoTokenizer
 
 from src.minGRU_torch.modelling_minGRU import (
     MinGRUConfig,
@@ -7,7 +7,6 @@ from src.minGRU_torch.modelling_minGRU import (
 )
 
 config = MinGRUConfig()
-config.attention_layers_idx = [2, 3]
 model = MinGRUForCausalLM(config)
 print(model)
 print(model.num_parameters())
@@ -22,10 +21,10 @@ for name, block in zip(["gru", "attn"], [gru_block, attn_block]):
     print(f'{name}: {block_params}')
 
 
+tokenizer = AutoTokenizer.from_pretrained('EleutherAI/gpt-neox-20b', clean_up_tokenization_spaces=True)
+tokenizer.pad_token_id = tokenizer.eos_token_id
+tokenizer.padding_side = 'left'
+input_ids = tokenizer(["Hey how are you doing?", "What is life?"], padding=True, return_tensors="pt")
 
-out = model(
-    input_ids=torch.tensor([[1,2,3], [1,2,3]], dtype=torch.long),
-    attention_mask=torch.tensor([[1,1,1], [1,1,0]], dtype=torch.long),
-    use_cache=True
-)
-print(out.logits.shape)
+out = model.generate(**input_ids, max_new_tokens=10, use_cache=True)
+print(tokenizer.batch_decode(out))

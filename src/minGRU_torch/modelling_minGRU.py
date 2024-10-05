@@ -689,10 +689,11 @@ class MinGRUBlock(nn.Module):
                 hidden_states = torch.sum(cache.conv_states[self.layer_idx] * self.conv1d.weight.squeeze(1), dim=-1)
                 if self.conv1d.bias is not None:
                     hidden_states = hidden_states + self.conv1d.bias
-                hidden_states = self.act(hidden_states)
+                hidden_states = self.act(hidden_states).unsqueeze(1)
             else:
                 hidden_states = self.act(self.conv1d(hidden_states.transpose(1, 2))[..., :seq_len].transpose(1, 2))
         else:
+            # TODO: might be broken but I don't care enough to check now
             if cached_forward:
                 hidden_states = causal_conv1d_update(
                     hidden_states.squeeze(1),
