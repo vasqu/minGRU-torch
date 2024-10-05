@@ -1,3 +1,5 @@
+"""PyTorch minGRU model."""
+
 import math
 from packaging import version
 from typing import Optional, Tuple, Dict, Any, Union

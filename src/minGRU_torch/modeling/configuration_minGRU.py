@@ -1,4 +1,5 @@
 """MinGRU configuration"""
+
 from typing import List
 
 from transformers.configuration_utils import PretrainedConfig
