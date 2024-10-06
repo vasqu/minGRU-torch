@@ -3,7 +3,7 @@
 ## Introduction
 
 This is a highly experimental implementation of minGRU [[1]](#citation) that is compatible 
-with `transformers` [[2]](#citation). The core parts of minGRU are based on [[3]](#citation).
+with `transformers` [[2]](#citation). The core parts of minGRU are based on [[3, 4]](#citation).
 
 Note:
 - It is only compatible with the pinned `transformers` version as custom cache support is not given otherwise.
@@ -97,7 +97,17 @@ print(tokenizer.batch_decode(out))
     url = "https://www.aclweb.org/anthology/2020.emnlp-demos.6",
     pages = "38--45"
 }
+
+[3]
+@misc{heinsen2023parallelization,
+      title={Efficient Parallelization of a Ubiquitous Sequential Computation}, 
+      author={Franz A. Heinsen},
+      year={2023},
+      eprint={2311.06281},
+      archivePrefix={arXiv},
+      primaryClass={cs.DS}
+}
 ```
 
-[3] No citation, but thanks to lucidrains for his repo [over here](https://github.com/lucidrains/minGRU-pytorch)
+[4] No citation, but thanks to lucidrains for his repo [over here](https://github.com/lucidrains/minGRU-pytorch)
 which provides most fundamental implementations for minGRU :)

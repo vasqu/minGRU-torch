@@ -586,6 +586,9 @@ MINGRU_ATTENTION_CLASSES = {
 
 
 class MinGRUAttentionBlock(nn.Module):
+    """
+    Wrapper around the core attention with norm->attn->residual
+    """
     def __init__(self, config: MinGRUConfig, layer_idx: int):
         super().__init__()
 
@@ -617,6 +620,16 @@ class MinGRUAttentionBlock(nn.Module):
 
 
 class MinGRUBlock(nn.Module):
+    """
+    Core minGRU block which goes by norm->conv->minGRU->residual.
+    Might be a slight deviation as it could also use norm->conv->residual->norm->minGRU->residual instead.
+
+    Conv is the causal 1d convolution as used in Mamba. minGRU is implemented in
+    the log space variant as it is more stable, see B.3.1 in the paper.
+
+    MinGRU defaults to parallel and only uses the sequential version if caching
+    is used to facilitate fast autoregressive decoding.
+    """
     def __init__(self, config: MinGRUConfig, layer_idx: int):
         super().__init__()
 
@@ -745,12 +758,14 @@ class MinGRUBlock(nn.Module):
 
         return hidden_states
 
+    # see B.2.1: enforced a positive range which in turn results in no need for complex numbers anymore
     def g(self, hidden_states):
         return torch.where(hidden_states >= 0, hidden_states + 0.5, hidden_states.sigmoid())
 
     def log_g(self, hidden_states):
         return torch.where(hidden_states >= 0, (F.relu(hidden_states) + 0.5).log(), -F.softplus(-hidden_states))
 
+    # see B.1: log space parallel scan based on https://github.com/glassroom/heinsen_sequence
     def heinsen_associative_scan_log(self, log_coefficients, log_values):
         a_star = log_coefficients.cumsum(dim=1)
         log_h0_plus_b_star = (log_values - a_star).logcumsumexp(dim=1)
@@ -759,6 +774,7 @@ class MinGRUBlock(nn.Module):
 
 
 class MinGRUMLP(nn.Module):
+    """The basic MLP as you used in various transformer architectures"""
     def __init__(self, config, layer_idx):
         super().__init__()
 
@@ -789,6 +805,7 @@ class MinGRUMLP(nn.Module):
 
 
 class MinGRUDecoderBlock(nn.Module):
+    """Wrapper around attn/minGRU x MLP"""
     def __init__(self, config, layer_idx: int):
         super().__init__()
 
@@ -933,6 +950,7 @@ class MinGRUModel(MinGRUPreTrainedModel):
         if position_ids is None:
             position_ids = cache_position.unsqueeze(0)
 
+        # attn needs a 4D mask while minGRU only needs a 2D (for padding)
         causal_mask = self._update_causal_mask(
             attention_mask, inputs_embeds, cache_position, past_key_values, output_attentions
         )
@@ -1003,6 +1021,7 @@ class MinGRUModel(MinGRUPreTrainedModel):
         past_key_values: HybridMinGRUAttentionDynamicCache,
         output_attentions: bool,
     ):
+        # we can safely ignore attn masks if we don't use attn...
         if not self._uses_attention_layers:
             return None
 
@@ -1158,18 +1177,18 @@ class MinGRUForCausalLM(MinGRUPreTrainedModel, GenerationMixin):
         return model_inputs
 
     def forward(
-            self,
-            input_ids: Optional[torch.LongTensor] = None,
-            attention_mask: Optional[torch.Tensor] = None,
-            inputs_embeds: Optional[torch.LongTensor] = None,
-            position_ids: Optional[torch.LongTensor] = None,
-            past_key_values: Optional[HybridMinGRUAttentionDynamicCache] = None,
-            labels: Optional[torch.LongTensor] = None,
-            use_cache: Optional[bool] = None,
-            output_attentions: Optional[bool] = None,
-            output_hidden_states: Optional[bool] = None,
-            return_dict: Optional[bool] = None,
-            cache_position: Optional[torch.LongTensor] = None,
+        self,
+        input_ids: Optional[torch.LongTensor] = None,
+        attention_mask: Optional[torch.Tensor] = None,
+        inputs_embeds: Optional[torch.LongTensor] = None,
+        position_ids: Optional[torch.LongTensor] = None,
+        past_key_values: Optional[HybridMinGRUAttentionDynamicCache] = None,
+        labels: Optional[torch.LongTensor] = None,
+        use_cache: Optional[bool] = None,
+        output_attentions: Optional[bool] = None,
+        output_hidden_states: Optional[bool] = None,
+        return_dict: Optional[bool] = None,
+        cache_position: Optional[torch.LongTensor] = None,
     ) -> Union[Tuple, CausalLMOutputWithPast]:
         r"""
         labels (`torch.LongTensor` of shape `(batch_size, sequence_length)`, *optional*):
