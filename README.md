@@ -2,13 +2,13 @@
 
 ## Introduction
 
-This is a highly experimental implementation of minGRU [[1]](#citation) that is compatible 
-with `transformers` [[2]](#citation). The core parts of minGRU are based on [[3, 4]](#citation).
+This is a highly experimental implementation of a hybrid minGRU [[1]](#citation) x attention [[2]](#citation) architecture 
+that is compatible with `transformers` [[3]](#citation). The core parts of minGRU are based on [[4, 5]](#citation).
 
 Note:
-- It is only compatible with the pinned `transformers` version as custom cache support is not given otherwise.
-- Attention with RoPE is supported with `eager`, `flash_attention_2`, and `sdpa`.
-- Initial state support is not given yet (in parallel mode).
+- It is only compatible with the pinned `transformers` version (in the [requirements.txt](requirements.txt)). Otherwise, custom caches will be broken.
+- Attention is used with RoPE; `eager`, `flash_attention_2`, and `sdpa` implementations are supported.
+- There is no support for initial hidden states in minGRU as it interferes with batched generation.
 - Potentially deviation from original [[1]](#citation) implementation as I only add the residual connection after 
 the convolution + minGRU ops instead of after each one separately.
 
@@ -86,6 +86,17 @@ print(tokenizer.batch_decode(out))
 }
 
 [2]
+@misc{vaswani2023attentionneed,
+      title={Attention Is All You Need}, 
+      author={Ashish Vaswani and Noam Shazeer and Niki Parmar and Jakob Uszkoreit and Llion Jones and Aidan N. Gomez and Lukasz Kaiser and Illia Polosukhin},
+      year={2023},
+      eprint={1706.03762},
+      archivePrefix={arXiv},
+      primaryClass={cs.CL},
+      url={https://arxiv.org/abs/1706.03762}, 
+}
+
+[3]
 @inproceedings{wolf-etal-2020-transformers,
     title = "Transformers: State-of-the-Art Natural Language Processing",
     author = "Thomas Wolf and Lysandre Debut and Victor Sanh and Julien Chaumond and Clement Delangue and Anthony Moi and Pierric Cistac and Tim Rault and Rémi Louf and Morgan Funtowicz and Joe Davison and Sam Shleifer and Patrick von Platen and Clara Ma and Yacine Jernite and Julien Plu and Canwen Xu and Teven Le Scao and Sylvain Gugger and Mariama Drame and Quentin Lhoest and Alexander M. Rush",
@@ -98,7 +109,7 @@ print(tokenizer.batch_decode(out))
     pages = "38--45"
 }
 
-[3]
+[4]
 @misc{heinsen2023parallelization,
       title={Efficient Parallelization of a Ubiquitous Sequential Computation}, 
       author={Franz A. Heinsen},
@@ -109,5 +120,5 @@ print(tokenizer.batch_decode(out))
 }
 ```
 
-[4] No citation, but thanks to lucidrains for his repo [over here](https://github.com/lucidrains/minGRU-pytorch)
+[5] No citation, but thanks to lucidrains for his repo [over here](https://github.com/lucidrains/minGRU-pytorch)
 which provides most fundamental implementations for minGRU :)
