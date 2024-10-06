@@ -774,7 +774,7 @@ class MinGRUBlock(nn.Module):
 
 
 class MinGRUMLP(nn.Module):
-    """The basic MLP as you used in various transformer architectures"""
+    """The basic MLP as used in various transformer architectures"""
     def __init__(self, config, layer_idx):
         super().__init__()
 
