@@ -644,7 +644,7 @@ class MinGRUBlock(nn.Module):
         self.to_hidden_and_gate = nn.Linear(self.hidden_size, self.intermediate_size, bias=self.use_gru_bias)
         self.to_out = nn.Linear(self.intermediate_size // 2, self.hidden_size, bias=False) if self.expansion_factor != 1. else nn.Identity()
 
-    def forward(self, x, attention_mask, initial_state, cache):
+    def forward(self, x, attention_mask=None, initial_state=None, cache=None):
         seq_len = x.shape[1]
         min_dtype = torch.finfo(x.dtype).min
 

@@ -27,6 +27,30 @@ I've semi-implemented the path for the cuda causal convolution. Thus, you could 
 
 
 ## Usage
+### MinGRU Block
+```python
+import torch
+from minGRU_torch import MinGRUConfig, MinGRUBlock
+
+# random input
+x = torch.randn(size=(4, 10, 256))
+
+# construct a small minGRU block
+config = MinGRUConfig(
+    hidden_size=256,
+    gru_expansion_factor=2,
+    conv_kernel_size=4,
+)
+minGRU_block = MinGRUBlock(config, layer_idx=0)
+
+# output is at 0 as we need to output None at 1 for compatibility reasons 
+out = minGRU_block(x)[0]
+
+# ensure it worked
+assert x.shape == out.shape
+```
+
+### MinGRU Language Model
 ```python
 from transformers import AutoTokenizer
 from minGRU_torch import MinGRUConfig, MinGRUForCausalLM

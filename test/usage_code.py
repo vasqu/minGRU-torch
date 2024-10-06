@@ -17,3 +17,24 @@ tokenizer.padding_side = 'left'
 input_ids = tokenizer(["Hey how are you doing?", "What is life?"], padding=True, return_tensors="pt")
 out = model.generate(**input_ids, max_new_tokens=10, use_cache=True)
 print(tokenizer.batch_decode(out))
+
+
+import torch
+from minGRU_torch import MinGRUConfig, MinGRUBlock
+
+# random input
+x = torch.randn(size=(4, 10, 256))
+
+# construct a small minGRU block
+config = MinGRUConfig(
+    hidden_size=256,
+    gru_expansion_factor=2,
+    conv_kernel_size=4,
+)
+minGRU_block = MinGRUBlock(config, layer_idx=0)
+
+# output is at 0 as we need to output None attn weights at 1
+out = minGRU_block(x)[0]
+
+# ensure it worked
+assert x.shape == out.shape
