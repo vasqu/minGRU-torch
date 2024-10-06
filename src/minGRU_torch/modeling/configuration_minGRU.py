@@ -59,8 +59,10 @@ class MinGRUConfig(PretrainedConfig):
             Number of hidden layers in the model.
         rms_norm_epsilon (`float`, *optional*, defaults to 1e-05):
             The epsilon to use in the rms normalization layers.
-        hidden_act (`str`, *optional*, defaults to `"gelu"`):
-            The non-linear activation function (function or string) in the decoder.
+        mlp_hidden_act (`str`, *optional*, defaults to `"gelu"`):
+            The non-linear activation function (function or string) in the mlp.
+        conv_hidden_act (`str`, *optional*, defaults to `"silu"`):
+            The non-linear activation function (function or string) in the convolution.
         initializer_range (`float`, *optional*, defaults to 0.02):
             The standard deviation used for initializing any torch weights/parameters.
         max_position_embeddings (`int`, *optional*, defaults to 2048):
@@ -130,7 +132,8 @@ class MinGRUConfig(PretrainedConfig):
         attention_layers_idx=None,
         num_hidden_layers=12,
         rms_norm_epsilon=1e-5,
-        hidden_act="gelu",
+        mlp_hidden_act="gelu",
+        conv_hidden_act="silu",
         initializer_range=0.02,
         max_position_embeddings=2048,
         rope_theta=10000.0,
@@ -158,7 +161,8 @@ class MinGRUConfig(PretrainedConfig):
         self.attention_layers_idx = attention_layers_idx
         self.num_hidden_layers = num_hidden_layers
         self.rms_norm_epsilon = rms_norm_epsilon
-        self.hidden_act = hidden_act
+        self.mlp_hidden_act = mlp_hidden_act
+        self.conv_hidden_act = conv_hidden_act
         self.initializer_range = initializer_range
         self.max_position_embeddings = max_position_embeddings
         self.rope_theta = rope_theta

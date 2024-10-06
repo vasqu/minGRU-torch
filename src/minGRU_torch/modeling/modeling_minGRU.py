@@ -631,7 +631,7 @@ class MinGRUBlock(nn.Module):
 
         self.norm = MinGRURMSNorm(self.hidden_size, eps=config.rms_norm_epsilon)
 
-        self.act = F.silu
+        self.act_fn = ACT2FN[config.conv_hidden_act]
         self.conv1d = nn.Conv1d(
             in_channels=self.hidden_size,
             out_channels=self.hidden_size,
@@ -722,9 +722,9 @@ class MinGRUBlock(nn.Module):
                 hidden_states = torch.sum(cache.conv_states[self.layer_idx] * self.conv1d.weight.squeeze(1), dim=-1)
                 if self.conv1d.bias is not None:
                     hidden_states = hidden_states + self.conv1d.bias
-                hidden_states = self.act(hidden_states).unsqueeze(1)
+                hidden_states = self.act_fn(hidden_states).unsqueeze(1)
             else:
-                hidden_states = self.act(self.conv1d(hidden_states.transpose(1, 2))[..., :seq_len].transpose(1, 2))
+                hidden_states = self.act_fn(self.conv1d(hidden_states.transpose(1, 2))[..., :seq_len].transpose(1, 2))
         else:
             # TODO: might be broken but I don't care enough to check now
             if cached_forward:
@@ -733,14 +733,14 @@ class MinGRUBlock(nn.Module):
                     cache.conv_states[self.layer_idx],
                     self.conv1d.weight.squeeze(1),
                     self.conv1d.bias,
-                    self.act,
+                    self.act_fn,
                 )
             else:
                 hidden_states = causal_conv1d_fn(
                     hidden_states.transpose(1, 2),
                     self.conv1d.weight.squeeze(1),
                     bias=self.conv1d.bias,
-                    activation=self.act,
+                    activation=self.act_fn,
                 ).transpose(1, 2)
 
         return hidden_states
@@ -768,7 +768,7 @@ class MinGRUMLP(nn.Module):
         self.hidden_size = config.hidden_size
         self.expansion_factor = config.mlp_expansion_factor
         self.intermediate_size = self.hidden_size * self.expansion_factor
-        self.act_fn = ACT2FN[config.hidden_act]
+        self.act_fn = ACT2FN[config.mlp_hidden_act]
         self.use_bias = config.use_mlp_bias
 
         self.norm = MinGRURMSNorm(self.hidden_size, eps=config.rms_norm_epsilon)
