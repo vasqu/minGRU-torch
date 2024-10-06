@@ -667,39 +667,39 @@ class MinGRUBlock(nn.Module):
         # similar to mamba we up project before recurrent ops
         hidden_states, gate = self.to_hidden_and_gate(hidden_states).chunk(2, dim=-1)
 
-        # necessary to avoid influence of padding
+        # necessary to avoid influence of padding (-inf == 0 in log space for gate)
         if attention_mask is not None:
             hidden_states = hidden_states * attention_mask[:, :, None]
             gate = gate + (~attention_mask[:, :, None].bool() * min_dtype)
 
         # inference/sequential mode
-        if cached_forward or seq_len == 1:
+        if cached_forward:
             hidden_states = self.g(hidden_states)
             gate = gate.sigmoid()
 
-            out = torch.lerp(cache.gru_states[self.layer_idx], hidden_states, gate) if cached_forward else (hidden_states * gate)
+            out = torch.lerp(cache.gru_states[self.layer_idx], hidden_states, gate)
+
+            # cache last hidden state
+            cache.gru_states[self.layer_idx].copy_(out)
+
         # train/parallel mode
         else:
-            # either add empty initial states by adding -inf == 0 log space
-            if not initial_state:
-                gate = F.pad(gate, (0, 0, 1, 0), value=min_dtype)
-                hidden_states = F.pad(hidden_states, (0, 0, 1, 0))
-
             log_coefficients = -F.softplus(gate)
 
             log_z = -F.softplus(-gate)
             log_tilde_hidden_states = self.log_g(hidden_states)
             log_values = log_z + log_tilde_hidden_states
 
-            # or add initial hidden state - inference compatibility probably not given out-of-the-box
+            # optional initial hidden state
+            # BUT batched inference compatibility probably not given out-of-the-box as we need right padding
             if initial_state:
                 log_coefficients = F.pad(log_coefficients, (0, 0, 1, 0))
                 log_values = torch.cat((self.log_g(initial_state), log_values), dim=1)
 
-            # cut of the initial (padded) hidden state
+            # cut off the initial hidden state (if necessary)
             out = self.heinsen_associative_scan_log(log_coefficients, log_values)[:, -seq_len:]
 
-            # optionally save last hidden state
+            # cache last hidden state
             if cached_start:
                 cache.gru_states[self.layer_idx].copy_(out[:, -1, :].unsqueeze(1))
 
