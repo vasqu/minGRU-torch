@@ -8,7 +8,7 @@ that is compatible with `transformers` [[3]](#citation). The core parts of minGR
 Note:
 - It is only compatible with the pinned `transformers` version (in the [requirements.txt](requirements.txt)). Otherwise, custom caches will be broken.
 - Attention is used with RoPE; `eager`, `flash_attention_2`, and `sdpa` implementations are supported.
-- There is no support for initial hidden states in minGRU as it interferes with batched generation.
+- For now, there is no support for initial hidden states in minGRU as it interferes with batched generation.
 - Potentially deviation from original [[1]](#citation) implementation as I only add the residual connection after 
 the convolution + minGRU ops instead of after each one separately.
 
