@@ -707,7 +707,7 @@ class MinGRUBlock(nn.Module):
             # BUT batched inference compatibility probably not given out-of-the-box as we need right padding
             if initial_state:
                 log_coefficients = F.pad(log_coefficients, (0, 0, 1, 0))
-                log_values = torch.cat((self.log_g(initial_state), log_values), dim=1)
+                log_values = torch.cat((initial_state.log(), log_values), dim=1)
 
             # cut off the initial hidden state (if necessary)
             out = self.heinsen_associative_scan_log(log_coefficients, log_values)[:, -seq_len:]
